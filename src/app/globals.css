@@ -1,0 +1,188 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { FaceMesh3D } from "@/components/canvas/FaceMesh3D";
+import { LightingStudio } from "@/components/canvas/LightingStudio";
+import { WebcamTracker } from "@/components/canvas/WebcamTracker";
+import { CatalogTryOn } from "@/components/modes/CatalogTryOn";
+import { MirrorGuidanceMode } from "@/components/modes/MirrorGuidanceMode";
+import { VoiceAssistantUI } from "@/components/voice/VoiceAssistantUI";
+import { useBeautyStore, type Product } from "@/lib/store";
+
+export default function HomePage() {
+  const {
+    selectedProduct,
+    setSelectedProduct,
+    selectedEnvironment,
+    setSelectedEnvironment,
+    guidanceScore,
+    setGuidanceScore,
+    setVoiceStatus,
+    setVoiceTranscript,
+    setAgentSpeech,
+  } = useBeautyStore();
+
+  const [mode, setMode] = useState<"catalog" | "mirror">("catalog");
+  const [catalog, setCatalog] = useState<Product[]>([]);
+  const [faceLandmarks, setFaceLandmarks] = useState<number[][] | null>(null);
+
+  useEffect(() => {
+    const loadCatalog = async () => {
+      const res = await fetch("/api/brands");
+      const data = await res.json();
+      setCatalog(data.products ?? data);
+      if (data.products?.[0]) setSelectedProduct(data.products[0]);
+    };
+
+    loadCatalog();
+  }, [setSelectedProduct]);
+
+  const currentModeLabel = useMemo(
+    () => (mode === "catalog" ? "Catalog Try-On" : "Mirror Guidance"),
+    [mode],
+  );
+
+  const handleVoiceResponse = (response: {
+    speech?: string;
+    action?: string;
+    params?: { category?: string; shadeHex?: string; finish?: string; zone?: string };
+  }) => {
+    if (response.speech) setAgentSpeech(response.speech);
+
+    if (response.action === "APPLY_PRODUCT" && response.params) {
+      const match = catalog.find(
+        (item) =>
+          item.category === response.params?.category ||
+          item.shadeHex.toLowerCase() === response.params?.shadeHex?.toLowerCase(),
+      );
+
+      if (match) {
+        setSelectedProduct(match);
+      }
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-[#080b12] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        <header className="mb-6 flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 shadow-glow backdrop-blur-sm md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-pink-200/80">IRIS AI</p>
+            <h1 className="mt-2 text-3xl font-semibold">3D Beauty Mirror + Coaching Studio</h1>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {(["catalog", "mirror"] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setMode(tab)}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
+                  mode === tab
+                    ? "border-pink-400 bg-pink-500/20 text-pink-100"
+                    : "border-white/10 bg-white/5 text-white/70 hover:border-white/20"
+                }`}
+              >
+                {tab === "catalog" ? "Catalog" : "Mirror"}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)_420px]">
+          <aside className="space-y-6">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-pink-200/80">Aura</p>
+              <h2 className="mt-2 text-xl font-semibold">Beauty Director</h2>
+              <VoiceAssistantUI
+                onTranscript={setVoiceTranscript}
+                onStatusChange={setVoiceStatus}
+                onAgentResponse={handleVoiceResponse}
+              />
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-pink-200/80">Lighting</p>
+              <div className="mt-4">
+                <LightingStudio value={selectedEnvironment} onChange={setSelectedEnvironment} />
+              </div>
+            </div>
+          </aside>
+
+          <section className="rounded-3xl border border-white/10 bg-[#0d1120] p-4 shadow-glow">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-pink-200/80">Studio</p>
+                <h2 className="mt-2 text-xl font-semibold">{currentModeLabel}</h2>
+              </div>
+              <div className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-200">
+                Live tracking active
+              </div>
+            </div>
+
+            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#22263a] via-[#101827] to-[#0d1020]">
+              <WebcamTracker onFaceData={setFaceLandmarks} />
+
+              <div className="pointer-events-none absolute inset-0">
+                <FaceMesh3D
+                  landmarks={faceLandmarks}
+                  product={selectedProduct}
+                  environment={selectedEnvironment}
+                />
+              </div>
+
+              {mode === "mirror" && faceLandmarks && (
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_rgba(17,24,39,0.08)_55%,_rgba(17,24,39,0.44)_100%)]" />
+              )}
+            </div>
+
+            {mode === "mirror" && (
+              <div className="mt-4">
+                <MirrorGuidanceMode
+                  score={guidanceScore}
+                  product={selectedProduct}
+                  landmarks={faceLandmarks}
+                />
+              </div>
+            )}
+          </section>
+
+          <aside className="space-y-6">
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-pink-200/80">Product</p>
+              <h2 className="mt-2 text-xl font-semibold">Try-on palette</h2>
+              <CatalogTryOn
+                products={catalog}
+                selectedProduct={selectedProduct}
+                onSelect={setSelectedProduct}
+              />
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-pink-200/80">Scores</p>
+              <div className="mt-4 space-y-4">
+                {[
+                  { label: "Symmetry", value: guidanceScore.symmetry },
+                  { label: "Precision", value: guidanceScore.precision },
+                  { label: "Blending", value: guidanceScore.blending },
+                ].map((item) => (
+                  <div key={item.label}>
+                    <div className="mb-2 flex items-center justify-between text-sm">
+                      <span className="text-white/80">{item.label}</span>
+                      <span className="font-semibold text-pink-200">{Math.round(item.value)}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-white/10">
+                      <div
+                        className="h-2 rounded-full bg-gradient-to-r from-pink-400 via-violet-400 to-cyan-300"
+                        style={{ width: `${item.value}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  );
+}
